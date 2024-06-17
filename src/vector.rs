@@ -1,4 +1,4 @@
-use glam::{UVec2, Vec2, IVec3, UVec3, Vec3};
+use glam::{IVec3, UVec2, UVec3, Vec2, Vec3};
 
 pub trait Pos3 {
     fn into_vec3(self) -> Vec3;

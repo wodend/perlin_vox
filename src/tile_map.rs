@@ -6,6 +6,7 @@ use ndarray::{s, Array3, ArrayBase, Dimension, OwnedRepr};
 use crate::vox::Vox;
 use crate::tile_set::TileSet;
 use crate::noise::{narray1, narray2};
+use crate::render::normalize;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Rotation {
@@ -13,22 +14,6 @@ pub enum Rotation {
     D90,
     D180,
     D270,
-}
-
-/// Normalize an ndarray of f32.
-pub fn normalize<S>(narray: &mut ArrayBase<OwnedRepr<f32>, S>)
-where
-    S: Dimension,
-{
-    let min = *narray
-        .iter()
-        .min_by(|x, y| x.partial_cmp(y).unwrap())
-        .unwrap();
-    let max = *narray
-        .iter()
-        .max_by(|x, y| x.partial_cmp(y).unwrap())
-        .unwrap();
-    narray.mapv_inplace(|x| (x - min) / (max - min));
 }
 
 // TODO:

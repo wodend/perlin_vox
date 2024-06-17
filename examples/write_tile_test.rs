@@ -1,9 +1,9 @@
 use std::time::Instant;
 
-use perlin_vox::tile_map::{tile_map, perlin_tile};
 use perlin_vox::render::tile_array;
-use perlin_vox::vox::Vox;
+use perlin_vox::tile_map::{perlin_tile, tile_map};
 use perlin_vox::timing::print_elapsed;
+use perlin_vox::vox::Vox;
 
 fn main() {
     let now = Instant::now();

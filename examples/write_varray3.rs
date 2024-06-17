@@ -2,8 +2,8 @@ use std::time::Instant;
 
 use perlin_vox::noise::narray3;
 use perlin_vox::render::varray3;
-use perlin_vox::vox::Vox;
 use perlin_vox::timing::print_elapsed;
+use perlin_vox::vox::Vox;
 
 fn main() {
     let now = Instant::now();

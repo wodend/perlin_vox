@@ -1,12 +1,12 @@
 use ndarray::Array3;
 
+/// A set of tiles for use in a TileMap.
 pub struct TileSet {
     pub tile_size: usize,
     tiles: Vec<Array3<[u8; 4]>>,
 }
-
 impl TileSet {
-    // Create a new TileSet
+    /// Create a new TileSet
     pub fn new(tile_size: usize) -> Self {
         Self {
             tile_size: tile_size,
@@ -14,7 +14,7 @@ impl TileSet {
         }
     }
 
-    // Insert a new tile and return its ID
+    /// Insert a new tile and return its ID
     pub fn insert(&mut self, varray3: Array3<[u8; 4]>) -> std::io::Result<usize> {
         self.check_size(varray3.dim())?;
         self.tiles.push(varray3);
