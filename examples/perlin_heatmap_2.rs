@@ -7,17 +7,7 @@ fn main() {
     let mut timer = Timer::new();
 
     let mut perlin2 = Perlin2::gen((64, 64), 0, 0.1);
-    let min = *perlin2
-        .values
-        .iter()
-        .min_by(|x, y| x.partial_cmp(y).unwrap())
-        .unwrap();
-    let max = *perlin2
-        .values
-        .iter()
-        .max_by(|x, y| x.partial_cmp(y).unwrap())
-        .unwrap();
-    timer.print_elapsed(&format!("Generated Perlin2 [min: {} max: {}]", min, max));
+    timer.print_elapsed("Generated Perlin2");
 
     let heatmap2 = PerlinHeatmap2::gen(&mut perlin2);
     timer.print_elapsed("Generated PerlinHeatmap2");

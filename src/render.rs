@@ -1,13 +1,14 @@
 use std::cmp::max;
-use std::f32::consts::{FRAC_PI_2, FRAC_PI_3, FRAC_PI_4, FRAC_PI_6};
+use std::f32::consts::{FRAC_PI_2, FRAC_PI_3, FRAC_PI_6};
 
 use enterpolation::{linear::ConstEquidistantLinear, Curve};
-use glam::{Vec3, IVec3, Vec2Swizzles, Quat};
-use ndarray::{s, Array3, ArrayBase, Dimension, OwnedRepr};
+use glam::{IVec3, Quat, Vec3};
+use ndarray::{Array3, ArrayBase, Dimension, OwnedRepr};
 use palette::{LinSrgba, Srgba};
 
 use crate::noise::{Perlin1, Perlin2, Perlin3};
-use crate::vector::{Pos2, Pos3, Vector3};
+use crate::tile_map::{rotate, TileMap};
+use crate::vector::{Pos3, Vector3};
 
 /// Generate a full color spectrum heatmap gradient.
 fn heatmap_gradient(gradient_size: usize) -> Vec<LinSrgba> {
@@ -91,7 +92,6 @@ fn line(p0: IVec3, p1: IVec3) -> Vec<IVec3> {
     line
 }
 
-
 /// A 3D array of RGBA 1D Perlin heatmap voxels.
 pub struct PerlinHeatmap1 {
     pub values: Array3<[u8; 4]>,
@@ -171,7 +171,6 @@ impl PerlinHeatmap3 {
     }
 }
 
-
 /// A 3D array of RGBA 3D voxel lines.
 pub struct LineMap {
     pub values: Array3<[u8; 4]>,
@@ -179,12 +178,19 @@ pub struct LineMap {
 impl LineMap {
     /// Generate a 3D test array of 3D voxel lines.
     pub fn gen() -> LineMap {
-        let gradient_size = 25;
+        let gradient_size = 31;
         let gradient = heatmap_gradient(gradient_size);
         let mut g_i = 0;
 
-        let y_axis_rotations = [0.0, FRAC_PI_6, FRAC_PI_4, FRAC_PI_3, FRAC_PI_2];
-        let z_axis_rotations = [0.0, FRAC_PI_6, FRAC_PI_4, FRAC_PI_3, FRAC_PI_2];
+        let y_axis_rotations = [0.0, FRAC_PI_6, FRAC_PI_3, 2.0 * FRAC_PI_3, 5.0 * FRAC_PI_6];
+        let z_axis_rotations = [
+            0.0,
+            FRAC_PI_6,
+            FRAC_PI_3,
+            FRAC_PI_2,
+            2.0 * FRAC_PI_3,
+            5.0 * FRAC_PI_6,
+        ];
 
         let size = (64, 64, 64);
         let len = 16;
@@ -202,6 +208,17 @@ impl LineMap {
                 let p0 = center - (v * len as f32).as_ivec3();
                 let p1 = center + (v * len as f32).as_ivec3();
 
+                if *y_axis_rotation == FRAC_PI_3 && *z_axis_rotation == FRAC_PI_2 {
+                    let p0 = center - (z_axis * len as f32).as_ivec3();
+                    let p1 = center + (z_axis * len as f32).as_ivec3();
+                    let line = line(p0, p1);
+                    for pos in line.iter() {
+                        let p = pos.as_uvec3().into_pos();
+                        let linsrgba = gradient[g_i];
+                        values[p] = Srgba::from(linsrgba).into();
+                    }
+                    g_i += 1;
+                }
                 let line = line(p0, p1);
                 for pos in line.iter() {
                     let p = pos.as_uvec3().into_pos();
@@ -216,40 +233,30 @@ impl LineMap {
     }
 }
 
+/// A 3D render of a voxel TileMap.
+pub struct Render {
+    pub values: Array3<[u8; 4]>,
+}
+impl Render {
+    /// Render a voxel TileMap.
+    pub fn gen(tile_map: TileMap) -> Render {
+        let size = tile_map.values.dim().into_uvec3() * tile_map.tileset.tile_size as u32;
+        let mut values = Array3::from_elem(size.into_pos(), [0; 4]);
 
-//
-// // fn rotate<T: Copy>(array: &Array3<T>, rotation: Rotation) -> Array3<T> {
-// //     let mut rotated = array.clone();
-// //     match rotation {
-// //         Rotation::D0 => rotated,
-// //         Rotation::D90 => {
-// //             rotated.invert_axis(ndarray::Axis(0));
-// //             rotated.permuted_axes([1, 0, 2])
-// //         }
-// //         Rotation::D180 => {
-// //             rotated.invert_axis(ndarray::Axis(0));
-// //             rotated.invert_axis(ndarray::Axis(1));
-// //             rotated
-// //         }
-// //         Rotation::D270 => {
-// //             rotated.invert_axis(ndarray::Axis(1));
-// //             rotated.permuted_axes([1, 0, 2])
-// //         }
-// //     }
-// // }
-// //
-// // pub fn tile_array(tile_map: TileMap) -> Array3<[u8; 4]> {
-// //     let size = tile_map.values.dim().into_uvec3() * tile_map.tiles.tile_size as u32;
-// //     let mut varray = Array3::from_elem(size.into_pos(), [0; 4]);
-// //
-// //     for ((xyz, tile_id), r) in tile_map.values.indexed_iter().zip(tile_map.rotations.iter()) {
-// //         let tile = tile_map.tiles.get(*tile_id as usize).unwrap();
-// //         let tile_r = rotate(tile, *r);
-// //         let tile_vector = xyz.into_uvec3() * tile_map.tiles.tile_size as u32;
-// //         for (xyz, rgba) in tile_r.indexed_iter() {
-// //             let vector = tile_vector + xyz.into_uvec3();
-// //             varray[vector.into_pos()] = *rgba;
-// //         }
-// //     }
-// //     varray
-// // }
+        for ((xyz, tile_id), r) in tile_map
+            .values
+            .indexed_iter()
+            .zip(tile_map.rotations.iter())
+        {
+            let tile = tile_map.tileset.get(*tile_id as usize).unwrap();
+            let tile_r = rotate(tile, *r);
+            let tile_vector = xyz.into_uvec3() * tile_map.tileset.tile_size as u32;
+            for (xyz, rgba) in tile_r.indexed_iter() {
+                let vector = tile_vector + xyz.into_uvec3();
+                values[vector.into_pos()] = *rgba;
+            }
+        }
+
+        Render { values }
+    }
+}
