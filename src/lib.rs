@@ -1,3 +1,4 @@
+pub mod caldera;
 pub mod noise;
 pub mod render;
 pub mod tile_map;

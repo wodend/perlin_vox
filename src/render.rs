@@ -25,7 +25,7 @@ fn heatmap_gradient(gradient_size: usize) -> Vec<LinSrgba> {
 }
 
 /// Generate a binary heatmap gradient black to white.
-fn binary_heatmap_gradient(gradient_size: usize) -> Vec<LinSrgba> {
+pub fn binary_heatmap_gradient(gradient_size: usize) -> Vec<LinSrgba> {
     let gradient = ConstEquidistantLinear::<f32, _, 2>::equidistant_unchecked([
         Srgba::new(0.0, 0.0, 0.0, 255.0).into_linear(),
         Srgba::new(1.0, 1.0, 1.0, 255.0).into_linear(),
@@ -34,7 +34,7 @@ fn binary_heatmap_gradient(gradient_size: usize) -> Vec<LinSrgba> {
 }
 
 /// Normalize an ndarray of f32.
-fn normalize<D>(narray: &mut ArrayBase<OwnedRepr<f32>, D>)
+pub fn normalize<D>(narray: &mut ArrayBase<OwnedRepr<f32>, D>)
 where
     D: Dimension,
 {

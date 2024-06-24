@@ -1,5 +1,6 @@
 use std::vec;
 
+use bitflags::bitflags;
 use ndarray::Array3;
 
 use crate::tile_set::TileSet;
@@ -81,3 +82,4 @@ impl TileMap {
         tiles
     }
 }
+
