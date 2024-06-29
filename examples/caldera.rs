@@ -3,7 +3,7 @@ use perlin_vox::timing::Timer;
 use perlin_vox::vox::Vox;
 
 fn main() {
-    let seeds = [0, 4, 17];
+    let seeds = [0, 4, 731];
 
     for seed in seeds {
         let name = format!("caldera_{}", seed);
@@ -15,6 +15,6 @@ fn main() {
             .unwrap()
             .write(&file_name)
             .expect("Failed to write to file.");
-        timer.print_elapsed(&format!("Wrote {}", &file_name));
+        timer.print_elapsed(&format!("wrote {}", &file_name));
     }
 }
