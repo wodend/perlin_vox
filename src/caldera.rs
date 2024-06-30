@@ -2,7 +2,9 @@ use glam::IVec3;
 use ndarray::Array3;
 use glam::UVec3;
 use rand::seq::IteratorRandom;
-use rand::rngs::ThreadRng;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
+// use rand::rngs::ThreadRng;
 
 use crate::noise::Perlin1;
 use crate::render::normalize;
@@ -16,6 +18,7 @@ enum VertexType {
     Empty,
     Path,
     Ground,
+    MaybePath,
 }
 impl VertexType {
     fn rgba(&self) -> Rgba {
@@ -23,6 +26,7 @@ impl VertexType {
             VertexType::Empty => Rgba([0; 4]),
             VertexType::Path => Rgba([51, 51, 51, 255]),
             VertexType::Ground => Rgba([120, 159, 138, 255]),
+            VertexType::MaybePath => Rgba([90, 129, 108, 255]),
         }
     }
 }
@@ -84,6 +88,8 @@ struct Tile {
     nw: VertexType,
 }
 impl Tile {
+    const DIRECTION_SPEC_SIZE: usize = 8;
+
     /// Create a new empty Tile.
     fn new() -> Tile {
         Tile {
@@ -96,6 +102,49 @@ impl Tile {
             sw: VertexType::Empty,
             w: VertexType::Empty,
             nw: VertexType::Empty,
+        }
+    }
+
+    /// Create a new Tile from an direction spec.
+    fn from_direction_spec(center: VertexType, array: [VertexType; Self::DIRECTION_SPEC_SIZE]) -> Tile {
+        Tile {
+            center: center,
+            n: array[0],
+            ne: array[1],
+            e: array[2],
+            se: array[3],
+            s: array[4],
+            sw: array[5],
+            w: array[6],
+            nw: array[7],
+        }
+    }
+
+    /// Create an direction spec from a tile.
+    fn into_direction_spec(self) -> [VertexType; Self::DIRECTION_SPEC_SIZE] {
+        [
+            self.n,
+            self.ne,
+            self.e,
+            self.se,
+            self.s,
+            self.sw,
+            self.w,
+            self.nw,
+        ]
+    }
+
+    /// Get the VertexType by Direction.
+    fn vertex_type(&self, direction: Direction) -> VertexType {
+        match direction {
+            Direction::N => self.n,
+            Direction::NE => self.ne,
+            Direction::E => self.e,
+            Direction::SE => self.se,
+            Direction::S => self.s,
+            Direction::SW => self.sw,
+            Direction::W => self.w,
+            Direction::NW => self.nw,
         }
     }
 
@@ -129,18 +178,173 @@ impl Tile {
         }
     }
 
-    /// Get the VertexType by Direction.
-    fn vertex_type(&self, direction: Direction) -> VertexType {
-        match direction {
-            Direction::N => self.n,
-            Direction::NE => self.ne,
-            Direction::E => self.e,
-            Direction::SE => self.se,
-            Direction::S => self.s,
-            Direction::SW => self.sw,
-            Direction::W => self.w,
-            Direction::NW => self.nw,
+    /// Create a new debug Path tile.
+    fn debug_maybe_path() -> Tile {
+        Tile {
+            center: VertexType::MaybePath,
+            n: VertexType::MaybePath,
+            ne: VertexType::MaybePath,
+            e: VertexType::MaybePath,
+            se: VertexType::MaybePath,
+            s: VertexType::MaybePath,
+            sw: VertexType::MaybePath,
+            w: VertexType::MaybePath,
+            nw: VertexType::MaybePath,
         }
+    }
+
+
+    /// Create a debug tile.
+    fn debug() -> Tile {
+        Tile {
+            center: VertexType::Path,
+            n: VertexType::Path,
+            ne: VertexType::Ground,
+            e: VertexType::Ground,
+            se: VertexType::Path,
+            s: VertexType::Ground,
+            sw: VertexType::Ground,
+            w: VertexType::Ground,
+            nw: VertexType::Ground,
+        }
+    }
+
+    /// Create a new debug Path straight tile.
+    fn debug_path_straight() -> Tile {
+        Tile {
+            center: VertexType::Path,
+            n: VertexType::Ground,
+            ne: VertexType::Ground,
+            e: VertexType::Path,
+            se: VertexType::Ground,
+            s: VertexType::Ground,
+            sw: VertexType::Ground,
+            w: VertexType::Path,
+            nw: VertexType::Ground,
+        }
+    }
+
+    /// Create a new debug Path 3 way tile.
+    fn debug_path_3way() -> Tile {
+        Tile {
+            center: VertexType::Path,
+            n: VertexType::Ground,
+            ne: VertexType::Ground,
+            e: VertexType::Path,
+            se: VertexType::Ground,
+            s: VertexType::Path,
+            sw: VertexType::Ground,
+            w: VertexType::Path,
+            nw: VertexType::Ground,
+        }
+    }
+
+    /// Create a new debug Path left turn tile.
+    fn debug_path_left() -> Tile {
+        Tile {
+            center: VertexType::Path,
+            n: VertexType::Ground,
+            ne: VertexType::Path,
+            e: VertexType::Ground,
+            se: VertexType::Ground,
+            s: VertexType::Ground,
+            sw: VertexType::Ground,
+            w: VertexType::Path,
+            nw: VertexType::Ground,
+        }
+    }
+
+    /// Create a new debug Path right turn tile.
+    fn debug_path_right() -> Tile {
+        Tile {
+            center: VertexType::Path,
+            n: VertexType::Ground,
+            ne: VertexType::Ground,
+            e: VertexType::Ground,
+            se: VertexType::Path,
+            s: VertexType::Ground,
+            sw: VertexType::Ground,
+            w: VertexType::Path,
+            nw: VertexType::Ground,
+        }
+    }
+
+    /// Create a new debug Path right turn tile.
+    fn debug_path_uturn() -> Tile {
+        Tile {
+            center: VertexType::Path,
+            n: VertexType::Ground,
+            ne: VertexType::Ground,
+            e: VertexType::Ground,
+            se: VertexType::Path,
+            s: VertexType::Ground,
+            sw: VertexType::Path,
+            w: VertexType::Ground,
+            nw: VertexType::Ground,
+        }
+    }
+
+    /// Create a new debug Path end tile.
+    fn debug_path_end() -> Tile {
+        Tile {
+            center: VertexType::Path,
+            n: VertexType::Ground,
+            ne: VertexType::Ground,
+            e: VertexType::Path,
+            se: VertexType::Ground,
+            s: VertexType::Ground,
+            sw: VertexType::Ground,
+            w: VertexType::Ground,
+            nw: VertexType::Ground,
+        }
+    }
+
+    /// Generate all debug Path tiles.
+    fn gen_all_debug_path_tiles() -> Vec<Tile> {
+        let mut tiles = Vec::new();
+        // Rotate straight Path tile.
+        for i in 0..4 {
+            let mut a = Tile::debug_path_straight().into_direction_spec();
+            a.rotate_left(i);
+            let t = Tile::from_direction_spec(VertexType::Path, a);
+            tiles.push(t);
+        }
+        // Rotate left turn Path tile.
+        for i in 0..4 {
+            let mut a = Tile::debug_path_left().into_direction_spec();
+            a.rotate_left(i * 2);
+            let t = Tile::from_direction_spec(VertexType::Path, a);
+            tiles.push(t);
+        }
+        // Rotate right turn Path tile.
+        for i in 0..4 {
+            let mut a = Tile::debug_path_right().into_direction_spec();
+            a.rotate_left(i * 2);
+            let t = Tile::from_direction_spec(VertexType::Path, a);
+            tiles.push(t);
+        }
+        // Rotate u-turn Path tile.
+        for i in 0..4 {
+            let mut a = Tile::debug_path_uturn().into_direction_spec();
+            a.rotate_left(i * 2);
+            let t = Tile::from_direction_spec(VertexType::Path, a);
+            tiles.push(t);
+        }
+        // Rotate end Path tile.
+        for i in 0..4 {
+            let mut a = Tile::debug_path_end().into_direction_spec();
+            a.rotate_left(i * 2);
+            let t = Tile::from_direction_spec(VertexType::Path, a);
+            tiles.push(t);
+        }
+        // Rotate 3 way turn Path tile.
+        for i in 0..4 {
+            let mut a = Tile::debug_path_3way().into_direction_spec();
+            a.rotate_left(i * 2);
+            let t = Tile::from_direction_spec(VertexType::Path, a);
+            tiles.push(t);
+        }
+        tiles
     }
 }
 
@@ -257,6 +461,11 @@ impl WfcCell {
             (VertexType::Path, _) => {
                 self.require(VertexType::Path, direction);
             },
+
+            // (VertexType::Path, _) => {
+                // self.require(VertexType::Path, direction);
+            // },
+            _ => (),
         }
     }
 
@@ -281,7 +490,7 @@ impl WfcCell {
     }
 
     /// Collapse the cell to a tile.
-    fn collapse(&mut self, rng: &mut ThreadRng) -> Option<Tile> {
+    fn collapse(&mut self, rng: &mut ChaCha8Rng) -> Option<Tile> {
         let mut ids = Vec::new();
         for (id, b) in self.banned.iter().enumerate() {
             if !b {
@@ -295,6 +504,17 @@ impl WfcCell {
             },
             None => None,
         }
+    }
+
+    /// Show the unbanned tiles.
+    fn unbanned_string(&self) -> String {
+        let mut tiles = Vec::new();
+        for (id, b) in self.banned.iter().enumerate() {
+            if !b {
+                tiles.push(self.tile_set.get(id));
+            }
+        }
+        format!("{:?}", tiles)
     }
 }
 
@@ -374,9 +594,9 @@ fn tilemap(size: UVec3, seed: u32) -> TileMap {
     // Initialize RGBA voxel array.
     let voxels_size = size;
     let voxels_center = voxels_size / 2;
-    // let mut values = Array3::from_elem(voxels_size.into_pos(), [0; 4]);
     let mut values = Array3::from_elem(voxels_size.into_pos(), Tile::new());
     let mut tilemap_path = Vec::new();
+    let mut sprawl_path = Vec::new();
 
     // Generate main path.
     let path_len = voxels_size.x / 2;
@@ -403,13 +623,22 @@ fn tilemap(size: UVec3, seed: u32) -> TileMap {
             let p0 = (x_c as usize, (y_c as i32 - i) as usize, 0);
             let p1 = (x_c as usize, (y_c as i32 + i) as usize, 0);
             // Add sprawl to wfc path.
-            values[p0] = Tile::debug_ground();
-            values[p1] = Tile::debug_ground();
+            sprawl_path.push(p0);
+            sprawl_path.push(p1);
+            // Set default sprawl tiles.
+            // values[p0] = Tile::debug_ground();
+            // values[p1] = Tile::debug_ground();
+            values[p0] = Tile::debug_maybe_path();
+            values[p1] = Tile::debug_maybe_path();
         }
         let p = (x_c as usize, y_c as usize, 0);
+        // Add main Perlin road to wfc path.
         tilemap_path.push(p);
+        // Set default sprawl tiles.
         values[p] = Tile::debug_path();
     }
+    // tilemap_path.extend(sprawl_path[0..8].iter());
+    // tilemap_path.extend(sprawl_path.iter());
 
     TileMap {
         tiles: values,
@@ -418,7 +647,7 @@ fn tilemap(size: UVec3, seed: u32) -> TileMap {
 }
 
 fn wfc(tilemap: &mut TileMap) {
-    let mut rng = rand::thread_rng();
+    let mut rng = ChaCha8Rng::seed_from_u64(1);
     let mut wave = Array3::from_elem(tilemap.tiles.dim(), WfcCell::new());
     let neighbors = [
         (Direction::N, IVec3::new(0, 1, 0)),
@@ -432,7 +661,8 @@ fn wfc(tilemap: &mut TileMap) {
     ];
     for p in tilemap.path.iter() {
         let w = wave.get_mut(*p).expect("Path out of bounds!");
-        let g = gen_all_path_tiles();
+        // let g = gen_all_path_tiles();
+        let g = Tile::gen_all_debug_path_tiles();
         g.iter().for_each(|t| {
             w.insert(*t)
         });
@@ -450,10 +680,18 @@ fn wfc(tilemap: &mut TileMap) {
                 Direction::W => tile.e,
                 Direction::NW => tile.se,
             };
+            if *p == (8, 14, 0) && d == Direction::N {
+                // println!("{:?}", vertex_type);
+                println!("{:?}", tile);
+            }
             w.update(vertex_type, d);
         }
         let t = w.collapse(&mut rng);
         if let Some(tile) = t {
+            if tile == Tile::debug() {
+                println!("{:?}", p);
+                // println!("{:?}", w.unbanned_string());
+            }
             tilemap.tiles[*p] = tile;
         }
     }

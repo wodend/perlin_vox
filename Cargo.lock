@@ -159,6 +159,8 @@ dependencies = [
  "ndarray",
  "palette",
  "rand",
+ "rand_chacha",
+ "rand_core",
 ]
 
 [[package]]
