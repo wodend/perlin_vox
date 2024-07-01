@@ -4,7 +4,6 @@ use glam::UVec3;
 use rand::seq::IteratorRandom;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-// use rand::rngs::ThreadRng;
 
 use crate::noise::Perlin1;
 use crate::render::normalize;
@@ -18,7 +17,6 @@ enum VertexType {
     Empty,
     Path,
     Ground,
-    MaybePath,
 }
 impl VertexType {
     fn rgba(&self) -> Rgba {
@@ -26,7 +24,6 @@ impl VertexType {
             VertexType::Empty => Rgba([0; 4]),
             VertexType::Path => Rgba([51, 51, 51, 255]),
             VertexType::Ground => Rgba([120, 159, 138, 255]),
-            VertexType::MaybePath => Rgba([90, 129, 108, 255]),
         }
     }
 }
@@ -178,36 +175,6 @@ impl Tile {
         }
     }
 
-    /// Create a new debug Path tile.
-    fn debug_maybe_path() -> Tile {
-        Tile {
-            center: VertexType::MaybePath,
-            n: VertexType::MaybePath,
-            ne: VertexType::MaybePath,
-            e: VertexType::MaybePath,
-            se: VertexType::MaybePath,
-            s: VertexType::MaybePath,
-            sw: VertexType::MaybePath,
-            w: VertexType::MaybePath,
-            nw: VertexType::MaybePath,
-        }
-    }
-
-
-    /// Create a debug tile.
-    fn debug() -> Tile {
-        Tile {
-            center: VertexType::Path,
-            n: VertexType::Path,
-            ne: VertexType::Ground,
-            e: VertexType::Ground,
-            se: VertexType::Path,
-            s: VertexType::Ground,
-            sw: VertexType::Ground,
-            w: VertexType::Ground,
-            nw: VertexType::Ground,
-        }
-    }
 
     /// Create a new debug Path straight tile.
     fn debug_path_straight() -> Tile {
@@ -424,6 +391,11 @@ impl TileSet {
             Direction::NW => &self.nws,
         }
     }
+
+    /// Get a VertexType for each tile center.
+    fn vertex_types_center(&mut self) -> &Vec<VertexType> {
+        &self.centers
+    }
 }
 
 /// A WaveFunctionCollapse cell.
@@ -448,23 +420,16 @@ impl WfcCell {
     }
 
     /// Update the cell given a neighboring vertex type and direction.
-    fn update(&mut self, vertex_type: VertexType, direction: Direction) {
+    fn update(&mut self, add: bool, vertex_type: VertexType, direction: Direction) {
         match (vertex_type, direction) {
             (VertexType::Empty, _) => {
                 self.ban(VertexType::Path, direction);
             },
 
-            (VertexType::Ground, _) => {
-                self.ban(VertexType::Path, direction);
-            },
-
             (VertexType::Path, _) => {
-                self.require(VertexType::Path, direction);
+                self.require(add, VertexType::Path, direction);
             },
 
-            // (VertexType::Path, _) => {
-                // self.require(VertexType::Path, direction);
-            // },
             _ => (),
         }
     }
@@ -479,12 +444,25 @@ impl WfcCell {
         }
     }
 
+    /// Ban the given vertex type and direction.
+    fn ban_center(&mut self, vertex_type: VertexType) {
+        let vts = self.tile_set.vertex_types_center();
+        for (vt, b) in vts.iter().zip(self.banned.iter_mut()) {
+            if *vt == vertex_type {
+                *b = true;
+            }
+        }
+    }
+
     /// Require the given vertex type and direction.
-    fn require(&mut self, vertex_type: VertexType, direction: Direction) {
+    fn require(&mut self, add: bool, vertex_type: VertexType, direction: Direction) {
         let vts = self.tile_set.vertex_types(direction);
         for (vt, b) in vts.iter().zip(self.banned.iter_mut()) {
             if *vt != vertex_type {
                 *b = true;
+            }
+            if add && *vt == vertex_type {
+                *b = false;
             }
         }
     }
@@ -504,17 +482,6 @@ impl WfcCell {
             },
             None => None,
         }
-    }
-
-    /// Show the unbanned tiles.
-    fn unbanned_string(&self) -> String {
-        let mut tiles = Vec::new();
-        for (id, b) in self.banned.iter().enumerate() {
-            if !b {
-                tiles.push(self.tile_set.get(id));
-            }
-        }
-        format!("{:?}", tiles)
     }
 }
 
@@ -626,10 +593,8 @@ fn tilemap(size: UVec3, seed: u32) -> TileMap {
             sprawl_path.push(p0);
             sprawl_path.push(p1);
             // Set default sprawl tiles.
-            // values[p0] = Tile::debug_ground();
-            // values[p1] = Tile::debug_ground();
-            values[p0] = Tile::debug_maybe_path();
-            values[p1] = Tile::debug_maybe_path();
+            values[p0] = Tile::debug_ground();
+            values[p1] = Tile::debug_ground();
         }
         let p = (x_c as usize, y_c as usize, 0);
         // Add main Perlin road to wfc path.
@@ -637,8 +602,7 @@ fn tilemap(size: UVec3, seed: u32) -> TileMap {
         // Set default sprawl tiles.
         values[p] = Tile::debug_path();
     }
-    // tilemap_path.extend(sprawl_path[0..8].iter());
-    // tilemap_path.extend(sprawl_path.iter());
+    tilemap_path.extend(sprawl_path.iter());
 
     TileMap {
         tiles: values,
@@ -659,13 +623,21 @@ fn wfc(tilemap: &mut TileMap) {
         (Direction::W, IVec3::new(-1, 0, 0)),
         (Direction::NW, IVec3::new(-1, 1, 0)),
     ];
+    // Initialize waves.
     for p in tilemap.path.iter() {
         let w = wave.get_mut(*p).expect("Path out of bounds!");
-        // let g = gen_all_path_tiles();
         let g = Tile::gen_all_debug_path_tiles();
         g.iter().for_each(|t| {
             w.insert(*t)
         });
+        let current = tilemap.tiles.get(*p).expect("Path out of bounds!");
+        if current == &Tile::debug_ground() {
+            w.ban_center(VertexType::Path);
+        }
+    }
+    // Wave Function Collapse.
+    for p in tilemap.path.iter() {
+        let w = wave.get_mut(*p).expect("Path out of bounds!");
         let v = p.into_ivec3();
         for (d, o) in neighbors {
             let n = (v + o).as_uvec3();
@@ -680,17 +652,34 @@ fn wfc(tilemap: &mut TileMap) {
                 Direction::W => tile.e,
                 Direction::NW => tile.se,
             };
-            if *p == (8, 14, 0) && d == Direction::N {
-                // println!("{:?}", vertex_type);
-                println!("{:?}", tile);
-            }
-            w.update(vertex_type, d);
+            w.update(false, vertex_type, d);
         }
         let t = w.collapse(&mut rng);
         if let Some(tile) = t {
-            if tile == Tile::debug() {
-                println!("{:?}", p);
-                // println!("{:?}", w.unbanned_string());
+            for (d, o) in neighbors {
+                let p_n = (v + o).as_uvec3().into_pos();
+                let w_n = wave.get_mut(p_n).expect("Path out of bounds!");
+                let vertex_type = match d {
+                    Direction::N => tile.n,
+                    Direction::NE => tile.ne,
+                    Direction::E => tile.e,
+                    Direction::SE => tile.se,
+                    Direction::S => tile.s,
+                    Direction::SW => tile.sw,
+                    Direction::W => tile.w,
+                    Direction::NW => tile.nw,
+                };
+                let d_n = match d {
+                    Direction::N => Direction::S,
+                    Direction::NE => Direction::SW,
+                    Direction::E => Direction::W,
+                    Direction::SE => Direction::NW,
+                    Direction::S => Direction::N,
+                    Direction::SW => Direction::NE,
+                    Direction::W => Direction::E,
+                    Direction::NW => Direction::SE,
+                };
+                w_n.update(true, vertex_type, d_n);
             }
             tilemap.tiles[*p] = tile;
         }

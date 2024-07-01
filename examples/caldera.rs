@@ -3,8 +3,7 @@ use perlin_vox::timing::Timer;
 use perlin_vox::vox::Vox;
 
 fn main() {
-    // let seeds = [0, 4, 731];
-    let seeds = [0];
+    let seeds = [0, 4, 731];
 
     for seed in seeds {
         let name = format!("caldera_{}", seed);
