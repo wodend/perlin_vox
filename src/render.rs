@@ -33,27 +33,6 @@ pub fn binary_heatmap_gradient(gradient_size: usize) -> Vec<LinSrgba> {
     gradient.take(gradient_size).collect()
 }
 
-/// Normalize an ndarray of f32.
-pub fn normalize<D>(narray: &mut ArrayBase<OwnedRepr<f32>, D>)
-where
-    D: Dimension,
-{
-    let min = *narray
-        .iter()
-        .min_by(|x, y| x.partial_cmp(y).unwrap())
-        .unwrap();
-    let max = *narray
-        .iter()
-        .max_by(|x, y| x.partial_cmp(y).unwrap())
-        .unwrap();
-    narray.mapv_inplace(|x| normalize_scalar(x, min, max));
-}
-
-/// Normalize an f32 within the given range.
-fn normalize_scalar(x: f32, min: f32, max: f32) -> f32 {
-    (x - min) / (max - min)
-}
-
 /// Generate a line between two points using Bresemham's line algorithm.
 fn line(p0: IVec3, p1: IVec3) -> Vec<IVec3> {
     let delta_x = (p1.x - p0.x).abs();
@@ -106,7 +85,7 @@ impl PerlinHeatmap1 {
         let voxels_size = (noise.values.dim(), 1, 1);
         let mut values = Array3::from_elem(voxels_size, [0; 4]);
 
-        normalize(&mut noise.values);
+        noise.normalize();
 
         for (x, n) in noise.values.indexed_iter() {
             let index = (n * scalar) as usize;
@@ -133,7 +112,7 @@ impl PerlinHeatmap2 {
         let voxels_size = (d.0, d.1, 1);
         let mut values = Array3::from_elem(voxels_size, [0; 4]);
 
-        normalize(&mut noise.values);
+        noise.normalize();
 
         for ((x, y), n) in noise.values.indexed_iter() {
             let index = (n * scalar) as usize;
@@ -159,7 +138,7 @@ impl PerlinHeatmap3 {
         let d = noise.values.dim();
         let mut values = Array3::from_elem(d, [0; 4]);
 
-        normalize(&mut noise.values);
+        noise.normalize();
 
         for ((x, y, z), n) in noise.values.indexed_iter() {
             let index = (n * scalar) as usize;

@@ -1,7 +1,28 @@
 use glam::{Vec2, Vec2Swizzles, Vec3, Vec3Swizzles};
-use ndarray::{Array1, Array2, Array3};
+use ndarray::{ArrayBase, Array1, Array2, Array3, Dimension, OwnedRepr};
 
 use crate::vector::{Pos2, Pos3};
+
+/// Normalize an ndarray of f32.
+pub fn normalize<D>(narray: &mut ArrayBase<OwnedRepr<f32>, D>)
+where
+    D: Dimension,
+{
+    let min = *narray
+        .iter()
+        .min_by(|x, y| x.partial_cmp(y).unwrap())
+        .unwrap();
+    let max = *narray
+        .iter()
+        .max_by(|x, y| x.partial_cmp(y).unwrap())
+        .unwrap();
+    narray.mapv_inplace(|x| normalize_scalar(x, min, max));
+}
+
+/// Normalize an f32 within the given range.
+fn normalize_scalar(x: f32, min: f32, max: f32) -> f32 {
+    (x - min) / (max - min)
+}
 
 /// 1D Perlin noise and its analytical derivative.
 pub struct Perlin1 {
@@ -59,6 +80,10 @@ impl Perlin1 {
         let p = p * (s + 127.1);
 
         (p.sin() * 43758.5453).fract()
+    }
+
+    pub fn normalize(&mut self) {
+        normalize(&mut self.values);
     }
 }
 
@@ -132,6 +157,10 @@ impl Perlin2 {
             (p.x.sin() * 43758.5453).fract(),
             (p.y.sin() * 43758.5453).fract(),
         )
+    }
+
+    pub fn normalize(&mut self) {
+        normalize(&mut self.values);
     }
 }
 
@@ -230,5 +259,9 @@ impl Perlin3 {
             (p.y.sin() * 43758.5453).fract(),
             (p.z.sin() * 43758.5453).fract(),
         )
+    }
+
+    pub fn normalize(&mut self) {
+        normalize(&mut self.values);
     }
 }
