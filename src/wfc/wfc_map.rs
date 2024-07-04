@@ -5,7 +5,7 @@ use rand::SeedableRng;
 use rand::seq::IteratorRandom;
 
 use crate::vector::{Pos3, Vector3};
-use crate::wfc::honeycomb::{Cell, Point, PointType, Honeycomb};
+use crate::wfc::honeycomb::{Cell, CellPoint, CellPointType, Honeycomb};
 
 /// A cubic honeycomb for Cells.
 pub struct WfcMap {
@@ -16,14 +16,14 @@ impl WfcMap {
         let mut rng = ChaCha8Rng::seed_from_u64(1);
         let mut wfc_cells = Array3::from_elem(honeycomb.cells.dim(), WfcCell::new());
         let neighbors = [
-            (Point::N, IVec3::new(0, 1, 0)),
-            (Point::NE, IVec3::new(1, 1, 0)),
-            (Point::E, IVec3::new(1, 0, 0)),
-            (Point::SE, IVec3::new(1, -1, 0)),
-            (Point::S, IVec3::new(0, -1, 0)),
-            (Point::SW, IVec3::new(-1, -1, 0)),
-            (Point::W, IVec3::new(-1, 0, 0)),
-            (Point::NW, IVec3::new(-1, 1, 0)),
+            (CellPoint::N, IVec3::new(0, 1, 0)),
+            (CellPoint::NE, IVec3::new(1, 1, 0)),
+            (CellPoint::E, IVec3::new(1, 0, 0)),
+            (CellPoint::SE, IVec3::new(1, -1, 0)),
+            (CellPoint::S, IVec3::new(0, -1, 0)),
+            (CellPoint::SW, IVec3::new(-1, -1, 0)),
+            (CellPoint::W, IVec3::new(-1, 0, 0)),
+            (CellPoint::NW, IVec3::new(-1, 1, 0)),
         ];
         // Initialize waves.
         for p in honeycomb.path.iter() {
@@ -34,7 +34,7 @@ impl WfcMap {
             });
             let current = honeycomb.cells.get(*p).expect("Path out of bounds!");
             if current == &Cell::ground() {
-                w.ban_center(PointType::Path);
+                w.ban_center(CellPointType::Path);
             }
         }
         // Wave Function Collapse.
@@ -42,6 +42,7 @@ impl WfcMap {
         for p in honeycomb.path.iter() {
             let w = wfc_cells.get_mut(*p).expect("Path out of bounds!");
             let v = p.into_ivec3();
+            // Get updates from neighbors before collapsing.
             for (p, o) in neighbors {
                 let n = (v + o).as_uvec3();
                 let cell = honeycomb.cells.get(n.into_pos()).unwrap_or(&empty);
@@ -51,6 +52,7 @@ impl WfcMap {
             let c = w.collapse(&mut rng);
             if let Some(cell) = c {
                 honeycomb.cells[*p] = cell;
+                // Update neighbors after collapsing.
                 for (p, o) in neighbors {
                     let p_n = (v + o).as_uvec3().into_pos();
                     if let Some(w) = wfc_cells.get_mut(p_n) {
@@ -88,14 +90,16 @@ impl WfcCell {
     }
 
     /// Update the cell given a neighboring point type and point.
-    fn update(&mut self, add: bool, point_type: PointType, point: Point) {
+    fn update(&mut self, add: bool, point_type: CellPointType, point: CellPoint) {
         match (point_type, point) {
-            (PointType::Empty, _) => {
-                self.ban(PointType::Path, point);
+            (CellPointType::Empty, _) => {
+                for p in point.adjacent() {
+                    self.ban(CellPointType::Path, p);
+                }
             },
 
-            (PointType::Path, _) => {
-                self.require(add, PointType::Path, point);
+            (CellPointType::Path, _) => {
+                self.require(add, CellPointType::Path, point);
             },
 
             _ => (),
@@ -103,7 +107,7 @@ impl WfcCell {
     }
 
     /// Ban the given point type and point.
-    fn ban(&mut self, point_type: PointType, point: Point) {
+    fn ban(&mut self, point_type: CellPointType, point: CellPoint) {
         let vts = self.cell_set.point_types(point);
         for (vt, b) in vts.iter().zip(self.banned.iter_mut()) {
             if *vt == point_type {
@@ -113,7 +117,7 @@ impl WfcCell {
     }
 
     /// Ban the given point type and point.
-    fn ban_center(&mut self, point_type: PointType) {
+    fn ban_center(&mut self, point_type: CellPointType) {
         let vts = self.cell_set.point_types_center();
         for (vt, b) in vts.iter().zip(self.banned.iter_mut()) {
             if *vt == point_type {
@@ -123,7 +127,7 @@ impl WfcCell {
     }
 
     /// Require the given point type and point.
-    fn require(&mut self, add: bool, point_type: PointType, point: Point) {
+    fn require(&mut self, add: bool, point_type: CellPointType, point: CellPoint) {
         let vts = self.cell_set.point_types(point);
         for (vt, b) in vts.iter().zip(self.banned.iter_mut()) {
             if *vt != point_type {
@@ -156,15 +160,15 @@ impl WfcCell {
 /// A set of Cells.
 #[derive(Clone, Debug)]
 pub struct CellSet {
-    centers: Vec<PointType>,
-    ns: Vec<PointType>,
-    nes: Vec<PointType>,
-    es: Vec<PointType>,
-    ses: Vec<PointType>,
-    ss: Vec<PointType>,
-    sws: Vec<PointType>,
-    ws: Vec<PointType>,
-    nws: Vec<PointType>,
+    centers: Vec<CellPointType>,
+    ns: Vec<CellPointType>,
+    nes: Vec<CellPointType>,
+    es: Vec<CellPointType>,
+    ses: Vec<CellPointType>,
+    ss: Vec<CellPointType>,
+    sws: Vec<CellPointType>,
+    ws: Vec<CellPointType>,
+    nws: Vec<CellPointType>,
 }
 impl CellSet {
     /// Create a new CellSet.
@@ -215,23 +219,23 @@ impl CellSet {
         }
     }
 
-    /// Get a PointType for each cell in a given Point.
-    fn point_types(&mut self, p: Point) -> &Vec<PointType> {
+    /// Get a CellPointType for each cell in a given CellPoint.
+    fn point_types(&mut self, p: CellPoint) -> &Vec<CellPointType> {
         match p {
-            Point::Center => &self.centers,
-            Point::N => &self.ns,
-            Point::NE => &self.nes,
-            Point::E => &self.es,
-            Point::SE => &self.ses,
-            Point::S => &self.ss,
-            Point::SW => &self.sws,
-            Point::W => &self.ws,
-            Point::NW => &self.nws,
+            CellPoint::Center => &self.centers,
+            CellPoint::N => &self.ns,
+            CellPoint::NE => &self.nes,
+            CellPoint::E => &self.es,
+            CellPoint::SE => &self.ses,
+            CellPoint::S => &self.ss,
+            CellPoint::SW => &self.sws,
+            CellPoint::W => &self.ws,
+            CellPoint::NW => &self.nws,
         }
     }
 
-    /// Get a PointType for each cell center.
-    fn point_types_center(&mut self) -> &Vec<PointType> {
+    /// Get a CellPointType for each cell center.
+    fn point_types_center(&mut self) -> &Vec<CellPointType> {
         &self.centers
     }
 }

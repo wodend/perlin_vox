@@ -1,3 +1,5 @@
+use std::vec;
+
 use glam::{IVec3, UVec3};
 use ndarray::Array3;
 
@@ -30,6 +32,7 @@ impl Honeycomb {
         // Define voxel space scaling.
         let path_scale = 7.0;
         let sprawl_scale = 5.0;
+        let mut prev_y = None;
         for ((x, n_p), n_s) in noise_path.values.indexed_iter().zip(noise_sprawl.values) {
             // Scale path noise value.
             let y = center.y + (n_p * path_scale) as u32;
@@ -46,8 +49,20 @@ impl Honeycomb {
             }
             // Set path to Path Cells.
             let p = (x as usize, y as usize, 0);
-            cells[p] = Cell::path();
-            path.push(p);
+            // Handle cases where y values are not adjacent.
+            if let Some(p_y) = prev_y {
+                for i in 1..(y as i32 - p_y) {
+                    let p = (x as usize, (p_y + i) as usize, 0);
+                    cells[p] = Cell::path();
+                    path.push(p);
+                }
+                cells[p] = Cell::path();
+                path.push(p);
+            } else {
+                cells[p] = Cell::path();
+                path.push(p);
+            }
+            prev_y = Some(y as i32);
         }
         path.append(&mut sprawl_path);
 
@@ -79,19 +94,19 @@ impl Honeycomb {
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 /// A cubic honeycomb cell.
 /// 
-/// The cell is defined by the PointType values for several Points its top face.
+/// The cell is defined by the CellPointType values for several CellPoints its top face.
 /// One in the center, four for the cardinal directions in the center of each
 /// side, and four for the intercardinal directions in each corner.
 pub struct Cell {
-    pub center: PointType,
-    pub n: PointType,
-    pub ne: PointType,
-    pub e: PointType,
-    pub se: PointType,
-    pub s: PointType,
-    pub sw: PointType,
-    pub w: PointType,
-    pub nw: PointType,
+    pub center: CellPointType,
+    pub n: CellPointType,
+    pub ne: CellPointType,
+    pub e: CellPointType,
+    pub se: CellPointType,
+    pub s: CellPointType,
+    pub sw: CellPointType,
+    pub w: CellPointType,
+    pub nw: CellPointType,
 }
 impl Cell {
     const DEBUG_VOXELS_SIZE: usize = 3;
@@ -100,140 +115,186 @@ impl Cell {
     /// Create an Empty Cell.
     pub fn empty() -> Cell {
         Cell {
-            center: PointType::Empty,
-            n: PointType::Empty,
-            ne: PointType::Empty,
-            e: PointType::Empty,
-            se: PointType::Empty,
-            s: PointType::Empty,
-            sw: PointType::Empty,
-            w: PointType::Empty,
-            nw: PointType::Empty,
+            center: CellPointType::Empty,
+            n: CellPointType::Empty,
+            ne: CellPointType::Empty,
+            e: CellPointType::Empty,
+            se: CellPointType::Empty,
+            s: CellPointType::Empty,
+            sw: CellPointType::Empty,
+            w: CellPointType::Empty,
+            nw: CellPointType::Empty,
         }
     }
 
     /// Create a Ground Cell.
     pub fn ground() -> Cell {
         Cell {
-            center: PointType::Ground,
-            n: PointType::Ground,
-            ne: PointType::Ground,
-            e: PointType::Ground,
-            se: PointType::Ground,
-            s: PointType::Ground,
-            sw: PointType::Ground,
-            w: PointType::Ground,
-            nw: PointType::Ground,
+            center: CellPointType::Ground,
+            n: CellPointType::Ground,
+            ne: CellPointType::Ground,
+            e: CellPointType::Ground,
+            se: CellPointType::Ground,
+            s: CellPointType::Ground,
+            sw: CellPointType::Ground,
+            w: CellPointType::Ground,
+            nw: CellPointType::Ground,
         }
     }
 
     /// Create a Path Cell.
     pub fn path() -> Cell {
         Cell {
-            center: PointType::Path,
-            n: PointType::Path,
-            ne: PointType::Path,
-            e: PointType::Path,
-            se: PointType::Path,
-            s: PointType::Path,
-            sw: PointType::Path,
-            w: PointType::Path,
-            nw: PointType::Path,
+            center: CellPointType::Path,
+            n: CellPointType::Path,
+            ne: CellPointType::Path,
+            e: CellPointType::Path,
+            se: CellPointType::Path,
+            s: CellPointType::Path,
+            sw: CellPointType::Path,
+            w: CellPointType::Path,
+            nw: CellPointType::Path,
         }
     }
 
     /// Create a straight Path Cell.
     fn path_straight() -> Cell {
         Cell {
-            center: PointType::Path,
-            n: PointType::Ground,
-            ne: PointType::Ground,
-            e: PointType::Path,
-            se: PointType::Ground,
-            s: PointType::Ground,
-            sw: PointType::Ground,
-            w: PointType::Path,
-            nw: PointType::Ground,
+            center: CellPointType::Path,
+            n: CellPointType::Ground,
+            ne: CellPointType::Ground,
+            e: CellPointType::Path,
+            se: CellPointType::Ground,
+            s: CellPointType::Ground,
+            sw: CellPointType::Ground,
+            w: CellPointType::Path,
+            nw: CellPointType::Ground,
         }
     }
 
     /// Create a three-way turn Path Cell.
     fn path_3way() -> Cell {
         Cell {
-            center: PointType::Path,
-            n: PointType::Ground,
-            ne: PointType::Ground,
-            e: PointType::Path,
-            se: PointType::Ground,
-            s: PointType::Path,
-            sw: PointType::Ground,
-            w: PointType::Path,
-            nw: PointType::Ground,
+            center: CellPointType::Path,
+            n: CellPointType::Ground,
+            ne: CellPointType::Ground,
+            e: CellPointType::Path,
+            se: CellPointType::Ground,
+            s: CellPointType::Path,
+            sw: CellPointType::Ground,
+            w: CellPointType::Path,
+            nw: CellPointType::Ground,
+        }
+    }
+
+    /// Create a three-way turn Path Cell.
+    fn path_4way() -> Cell {
+        Cell {
+            center: CellPointType::Path,
+            n: CellPointType::Path,
+            ne: CellPointType::Ground,
+            e: CellPointType::Path,
+            se: CellPointType::Ground,
+            s: CellPointType::Path,
+            sw: CellPointType::Ground,
+            w: CellPointType::Path,
+            nw: CellPointType::Ground,
         }
     }
 
     /// Create a left turn Path Cell.
     fn path_left() -> Cell {
         Cell {
-            center: PointType::Path,
-            n: PointType::Ground,
-            ne: PointType::Path,
-            e: PointType::Ground,
-            se: PointType::Ground,
-            s: PointType::Ground,
-            sw: PointType::Ground,
-            w: PointType::Path,
-            nw: PointType::Ground,
+            center: CellPointType::Path,
+            n: CellPointType::Ground,
+            ne: CellPointType::Path,
+            e: CellPointType::Ground,
+            se: CellPointType::Ground,
+            s: CellPointType::Ground,
+            sw: CellPointType::Ground,
+            w: CellPointType::Path,
+            nw: CellPointType::Ground,
+        }
+    }
+
+    /// Create a 3 way left turn Path Cell.
+    fn path_3left() -> Cell {
+        Cell {
+            center: CellPointType::Path,
+            n: CellPointType::Ground,
+            ne: CellPointType::Path,
+            e: CellPointType::Ground,
+            se: CellPointType::Ground,
+            s: CellPointType::Path,
+            sw: CellPointType::Ground,
+            w: CellPointType::Path,
+            nw: CellPointType::Ground,
         }
     }
 
     /// Create a right turn Path Cell.
     fn path_right() -> Cell {
         Cell {
-            center: PointType::Path,
-            n: PointType::Ground,
-            ne: PointType::Ground,
-            e: PointType::Ground,
-            se: PointType::Path,
-            s: PointType::Ground,
-            sw: PointType::Ground,
-            w: PointType::Path,
-            nw: PointType::Ground,
+            center: CellPointType::Path,
+            n: CellPointType::Ground,
+            ne: CellPointType::Ground,
+            e: CellPointType::Ground,
+            se: CellPointType::Path,
+            s: CellPointType::Ground,
+            sw: CellPointType::Ground,
+            w: CellPointType::Path,
+            nw: CellPointType::Ground,
         }
     }
+
+    /// Create a 3 way right turn Path Cell.
+    fn path_3right() -> Cell {
+        Cell {
+            center: CellPointType::Path,
+            n: CellPointType::Path,
+            ne: CellPointType::Ground,
+            e: CellPointType::Ground,
+            se: CellPointType::Path,
+            s: CellPointType::Ground,
+            sw: CellPointType::Ground,
+            w: CellPointType::Path,
+            nw: CellPointType::Ground,
+        }
+    }
+
 
     /// Create a u-turn Path Cell.
     fn path_uturn() -> Cell {
         Cell {
-            center: PointType::Path,
-            n: PointType::Ground,
-            ne: PointType::Ground,
-            e: PointType::Ground,
-            se: PointType::Path,
-            s: PointType::Ground,
-            sw: PointType::Path,
-            w: PointType::Ground,
-            nw: PointType::Ground,
+            center: CellPointType::Path,
+            n: CellPointType::Ground,
+            ne: CellPointType::Ground,
+            e: CellPointType::Ground,
+            se: CellPointType::Path,
+            s: CellPointType::Ground,
+            sw: CellPointType::Path,
+            w: CellPointType::Ground,
+            nw: CellPointType::Ground,
         }
     }
 
     /// Create a dead end Path Cell.
     fn path_end() -> Cell {
         Cell {
-            center: PointType::Path,
-            n: PointType::Ground,
-            ne: PointType::Ground,
-            e: PointType::Path,
-            se: PointType::Ground,
-            s: PointType::Ground,
-            sw: PointType::Ground,
-            w: PointType::Ground,
-            nw: PointType::Ground,
+            center: CellPointType::Path,
+            n: CellPointType::Ground,
+            ne: CellPointType::Ground,
+            e: CellPointType::Path,
+            se: CellPointType::Ground,
+            s: CellPointType::Ground,
+            sw: CellPointType::Ground,
+            w: CellPointType::Ground,
+            nw: CellPointType::Ground,
         }
     }
 
     /// Create a new Cell from a direction spec.
-    fn from_direction_spec(center: PointType, array: [PointType; Self::DIRECTION_SPEC_SIZE]) -> Cell {
+    fn from_direction_spec(center: CellPointType, array: [CellPointType; Self::DIRECTION_SPEC_SIZE]) -> Cell {
         Cell {
             center: center,
             n: array[0],
@@ -248,7 +309,7 @@ impl Cell {
     }
 
     /// Create an direction spec from a Cell.
-    fn into_direction_spec(self) -> [PointType; Self::DIRECTION_SPEC_SIZE] {
+    fn into_direction_spec(self) -> [CellPointType; Self::DIRECTION_SPEC_SIZE] {
         [
             self.n,
             self.ne,
@@ -261,59 +322,63 @@ impl Cell {
         ]
     }
 
-    /// Get the PointType at a specific Point.
-    fn point_type(&self, point: Point) -> PointType {
-        match point {
-            Point::Center => self.center,
-            Point::N => self.n,
-            Point::NE => self.ne,
-            Point::E => self.e,
-            Point::SE => self.se,
-            Point::S => self.s,
-            Point::SW => self.sw,
-            Point::W => self.w,
-            Point::NW => self.nw,
-        }
-    }
-
     /// Create a Vec of all Path Cells.
     pub fn path_cells() -> Vec<Cell> {
         let mut cells = Vec::new();
-        cells.append(&mut Cell::path_straight().rotations(1));
-        cells.append(&mut Cell::path_left().rotations(2));
-        cells.append(&mut Cell::path_right().rotations(2));
-        cells.append(&mut Cell::path_uturn().rotations(2));
-        cells.append(&mut Cell::path_end().rotations(2));
-        cells.append(&mut Cell::path_3way().rotations(2));
+        cells.append(&mut Cell::path_4way().rotations(1, 1));
+        cells.append(&mut Cell::path_straight().rotations(4, 1));
+        cells.append(&mut Cell::path_left().rotations(4, 2));
+        cells.append(&mut Cell::path_right().rotations(4, 2));
+        cells.append(&mut Cell::path_uturn().rotations(4, 2));
+        cells.append(&mut Cell::path_end().rotations(4, 2));
+        cells.append(&mut Cell::path_3left().rotations(4, 2));
+        cells.append(&mut Cell::path_3right().rotations(4, 2));
+        cells.append(&mut Cell::path_3way().rotations(6, 1));
         cells
     }
 
     /// Creates a Vec of the first four n rotations of a Cell.
     /// 
-    /// The minimum rotation is 45 degrees, so n=1 rotates 45 degrees, n=2 rotates 90 degrees, etc.
-    fn rotations(&mut self, n: usize) -> Vec<Cell> {
+    /// The minimum rotation is 45 degrees, so r=1 rotates 45 degrees, r=2 rotates 90 degrees, etc.
+    fn rotations(&mut self, n: usize, r: usize) -> Vec<Cell> {
         let mut cells = Vec::new();
-        for i in 0..4 {
+        for i in 0..n {
             let mut ds = self.into_direction_spec();
-            ds.rotate_left(i * n);
+            ds.rotate_left(i * r);
             let t = Cell::from_direction_spec(self.center, ds);
             cells.push(t);
         }
         cells
     }
 
-    /// Get the PointType at a specific Point.
-    pub fn get(&self, p: Point) -> PointType {
+    /// Get all subsets of a set of Points.
+    pub fn subsets(nums: Vec<CellPoint>) -> Vec<Vec<CellPoint>> {
+        let mut result = vec![vec![]];
+
+        for num in nums {
+            let len = result.len();
+            for i in 0..len {
+                let mut subset = result[i].clone();
+                subset.push(num);
+                result.push(subset);
+            }
+        }
+
+        result
+    }
+
+    /// Get the CellPointType at a specific CellPoint.
+    pub fn get(&self, p: CellPoint) -> CellPointType {
         match p {
-            Point::Center => self.center,
-            Point::N => self.n,
-            Point::NE => self.ne,
-            Point::E => self.e,
-            Point::SE => self.se,
-            Point::S => self.s,
-            Point::SW => self.sw,
-            Point::W => self.w,
-            Point::NW => self.nw,
+            CellPoint::Center => self.center,
+            CellPoint::N => self.n,
+            CellPoint::NE => self.ne,
+            CellPoint::E => self.e,
+            CellPoint::SE => self.se,
+            CellPoint::S => self.s,
+            CellPoint::SW => self.sw,
+            CellPoint::W => self.w,
+            CellPoint::NW => self.nw,
         }
     }
 
@@ -324,9 +389,9 @@ impl Cell {
         let mut voxels = Array3::from_elem(size.into_pos(), base);
         let center = IVec3::new(1, 1, 2);
         voxels[center.as_uvec3().into_pos()] = base;
-        for d in Point::directions() {
+        for d in CellPoint::directions() {
             let p = (center + d.voxel_offset()).as_uvec3().into_pos();
-            voxels[p] = self.point_type(d).rgba();
+            voxels[p] = self.get(d).rgba();
         }
         voxels
     }
@@ -334,17 +399,19 @@ impl Cell {
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 /// A point type.
-pub enum PointType {
+pub enum CellPointType {
     Empty,
     Path,
     Ground,
+    Building,
 }
-impl PointType {
+impl CellPointType {
     fn rgba(&self) -> Rgba {
         match *self {
-            PointType::Empty => Rgba([0; 4]),
-            PointType::Path => Rgba([51, 51, 51, 255]),
-            PointType::Ground => Rgba([120, 159, 138, 255]),
+            CellPointType::Empty => Rgba([0; 4]),
+            CellPointType::Path => Rgba([51, 51, 51, 255]),
+            CellPointType::Ground => Rgba([120, 159, 138, 255]),
+            CellPointType::Building => Rgba([103, 127, 163, 255]),
         }
     }
 }
@@ -354,8 +421,8 @@ impl PointType {
 struct Rgba([u8; 4]);
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
-/// A Cell Point.
-pub enum Point {
+/// A Cell CellPoint.
+pub enum CellPoint {
     Center,
     N,
     NE,
@@ -366,49 +433,60 @@ pub enum Point {
     W,
     NW,
 }
-impl Point {
+impl CellPoint {
     /// Get the directional points.
-    fn directions() -> Vec<Point> {
+    fn directions() -> Vec<CellPoint> {
         vec![
-            Point::N,
-            Point::NE,
-            Point::E,
-            Point::SE,
-            Point::S,
-            Point::SW,
-            Point::W,
-            Point::NW,
+            CellPoint::N,
+            CellPoint::NE,
+            CellPoint::E,
+            CellPoint::SE,
+            CellPoint::S,
+            CellPoint::SW,
+            CellPoint::W,
+            CellPoint::NW,
         ]
+    }
+
+    /// Get the adjacent directional points, including self.
+    pub fn adjacent(&self) -> Vec<CellPoint> {
+        match self {
+            CellPoint::N => vec![CellPoint::N, CellPoint::NE, CellPoint::NW],
+            CellPoint::E => vec![CellPoint::E, CellPoint::NE, CellPoint::SE],
+            CellPoint::S => vec![CellPoint::S, CellPoint::SE, CellPoint::SW],
+            CellPoint::W => vec![CellPoint::W, CellPoint::SW, CellPoint::NW],
+            e => vec![*e],
+        }
     }
 
     /// Get the voxel space offset.
     fn voxel_offset(&self) -> IVec3 {
         match *self {
-            Point::Center => IVec3::new(0, 0, 0),
-            Point::N => IVec3::new(0, 1, 0),
-            Point::NE => IVec3::new(1, 1, 0),
-            Point::E => IVec3::new(1, 0, 0),
-            Point::SE => IVec3::new(1, -1, 0),
-            Point::S => IVec3::new(0, -1, 0),
-            Point::SW => IVec3::new(-1, -1, 0),
-            Point::W => IVec3::new(-1, 0, 0),
-            Point::NW => IVec3::new(-1, 1, 0),
+            CellPoint::Center => IVec3::new(0, 0, 0),
+            CellPoint::N => IVec3::new(0, 1, 0),
+            CellPoint::NE => IVec3::new(1, 1, 0),
+            CellPoint::E => IVec3::new(1, 0, 0),
+            CellPoint::SE => IVec3::new(1, -1, 0),
+            CellPoint::S => IVec3::new(0, -1, 0),
+            CellPoint::SW => IVec3::new(-1, -1, 0),
+            CellPoint::W => IVec3::new(-1, 0, 0),
+            CellPoint::NW => IVec3::new(-1, 1, 0),
         }
     }
 
 
     
-    pub fn opposite(&self) -> Point {
+    pub fn opposite(&self) -> CellPoint {
         match self {
-            Point::Center => Point::Center,
-            Point::N => Point::S,
-            Point::NE => Point::SW,
-            Point::E => Point::W,
-            Point::SE => Point::NW,
-            Point::S => Point::N,
-            Point::SW => Point::NE,
-            Point::W => Point::E,
-            Point::NW => Point::SE,
+            CellPoint::Center => CellPoint::Center,
+            CellPoint::N => CellPoint::S,
+            CellPoint::NE => CellPoint::SW,
+            CellPoint::E => CellPoint::W,
+            CellPoint::SE => CellPoint::NW,
+            CellPoint::S => CellPoint::N,
+            CellPoint::SW => CellPoint::NE,
+            CellPoint::W => CellPoint::E,
+            CellPoint::NW => CellPoint::SE,
         }
     }
 }
