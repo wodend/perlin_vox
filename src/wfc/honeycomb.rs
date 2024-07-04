@@ -323,7 +323,7 @@ impl Cell {
     }
 
     /// Create a Vec of all Path Cells.
-    pub fn path_cells() -> Vec<Cell> {
+    pub fn paths() -> Vec<Cell> {
         let mut cells = Vec::new();
         cells.append(&mut Cell::path_4way().rotations(1, 1));
         cells.append(&mut Cell::path_straight().rotations(4, 1));
@@ -351,8 +351,70 @@ impl Cell {
         cells
     }
 
+    fn building(cell_points: Vec<CellPoint>) -> Cell {
+        let mut cell = Self::empty();
+        for c in cell_points {
+            match c {
+                CellPoint::Center => cell.center = CellPointType::Building,
+                CellPoint::N => cell.n = CellPointType::Building,
+                CellPoint::NE => cell.ne = CellPointType::Building,
+                CellPoint::E => cell.e = CellPointType::Building,
+                CellPoint::SE => cell.se = CellPointType::Building,
+                CellPoint::S => cell.s = CellPointType::Building,
+                CellPoint::SW => cell.sw = CellPointType::Building,
+                CellPoint::W => cell.w = CellPointType::Building,
+                CellPoint::NW => cell.nw = CellPointType::Building,
+            }
+        }
+        cell
+    }
+
+    fn buildingbig() -> Cell {
+        Cell {
+            center: CellPointType::BuildingBig,
+            n: CellPointType::BuildingBig,
+            ne: CellPointType::BuildingBig,
+            e: CellPointType::BuildingBig,
+            se: CellPointType::BuildingBig,
+            s: CellPointType::BuildingBig,
+            sw: CellPointType::BuildingBig,
+            w: CellPointType::BuildingBig,
+            nw: CellPointType::BuildingBig,
+        }
+    }
+
+    fn buildings() -> Vec<Cell> {
+        let cell_points = CellPoint::directions();
+        let subsets = Self::subsets(cell_points);
+        let mut cells = Vec::new();
+        for subset in subsets {
+            cells.push(Self::building(subset));
+        }
+        cells
+    }
+
+    pub fn paths_buildings() -> Vec<Cell> {
+        let mut cells = Vec::new();
+        let paths = Self::paths();
+        let buildings = Self::buildings();
+        for path in paths {
+            for building in buildings.iter() {
+                for p in CellPoint::directions() {
+                    if building.get(p) == CellPointType::Building && path.get(p) == CellPointType::Ground {
+                        let mut n = path.clone();
+                        *n.get_mut(p) = CellPointType::Building;
+                        cells.push(n);
+                    }
+                }
+            }
+        }
+        cells.push(Self::ground());
+        cells.push(Self::buildingbig());
+        cells
+    }
+
     /// Get all subsets of a set of Points.
-    pub fn subsets(nums: Vec<CellPoint>) -> Vec<Vec<CellPoint>> {
+    fn subsets(nums: Vec<CellPoint>) -> Vec<Vec<CellPoint>> {
         let mut result = vec![vec![]];
 
         for num in nums {
@@ -382,6 +444,21 @@ impl Cell {
         }
     }
 
+    /// Get the CellPointType at a specific CellPoint.
+    pub fn get_mut(&mut self, p: CellPoint) -> &mut CellPointType {
+        match p {
+            CellPoint::Center => &mut self.center,
+            CellPoint::N => &mut self.n,
+            CellPoint::NE => &mut self.ne,
+            CellPoint::E => &mut self.e,
+            CellPoint::SE => &mut self.se,
+            CellPoint::S => &mut self.s,
+            CellPoint::SW => &mut self.sw,
+            CellPoint::W => &mut self.w,
+            CellPoint::NW => &mut self.nw,
+        }
+    }
+
     /// Create the debug voxels for a Cell.
     fn debug_voxels(&self) -> Array3<Rgba> {
         let size = UVec3::splat(Self::DEBUG_VOXELS_SIZE as u32);
@@ -404,6 +481,7 @@ pub enum CellPointType {
     Path,
     Ground,
     Building,
+    BuildingBig,
 }
 impl CellPointType {
     fn rgba(&self) -> Rgba {
@@ -412,6 +490,7 @@ impl CellPointType {
             CellPointType::Path => Rgba([51, 51, 51, 255]),
             CellPointType::Ground => Rgba([120, 159, 138, 255]),
             CellPointType::Building => Rgba([103, 127, 163, 255]),
+            CellPointType::BuildingBig => Rgba([109, 103, 163, 255]),
         }
     }
 }

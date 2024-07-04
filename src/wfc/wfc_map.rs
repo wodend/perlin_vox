@@ -28,13 +28,14 @@ impl WfcMap {
         // Initialize waves.
         for p in honeycomb.path.iter() {
             let w = wfc_cells.get_mut(*p).expect("Path out of bounds!");
-            let g = Cell::path_cells();
+            let g = Cell::paths_buildings();
             g.iter().for_each(|t| {
                 w.insert(*t)
             });
             let current = honeycomb.cells.get(*p).expect("Path out of bounds!");
             if current == &Cell::ground() {
                 w.ban_center(CellPointType::Path);
+                w.ban_center(CellPointType::BuildingBig);
             }
         }
         // Wave Function Collapse.
@@ -90,16 +91,33 @@ impl WfcCell {
     }
 
     /// Update the cell given a neighboring point type and point.
-    fn update(&mut self, add: bool, point_type: CellPointType, point: CellPoint) {
+    fn update(&mut self, unban: bool, point_type: CellPointType, point: CellPoint) {
         match (point_type, point) {
             (CellPointType::Empty, _) => {
                 for p in point.adjacent() {
                     self.ban(CellPointType::Path, p);
+                    self.ban(CellPointType::Building, p);
+                    self.ban(CellPointType::BuildingBig, p);
                 }
             },
 
             (CellPointType::Path, _) => {
-                self.require(add, CellPointType::Path, point);
+                if unban {
+                    self.unban(CellPointType::Path, point);
+                }
+                self.require(CellPointType::Path, point);
+            },
+
+            (CellPointType::Building, _) => {
+                if unban {
+                    self.unban(CellPointType::BuildingBig, point);
+                }
+            },
+
+            (CellPointType::BuildingBig, _) => {
+                if unban {
+                    self.unban(CellPointType::Building, point);
+                }
             },
 
             _ => (),
@@ -127,14 +145,21 @@ impl WfcCell {
     }
 
     /// Require the given point type and point.
-    fn require(&mut self, add: bool, point_type: CellPointType, point: CellPoint) {
+    fn unban(&mut self, point_type: CellPointType, point: CellPoint) {
+        let vts = self.cell_set.point_types(point);
+        for (vt, b) in vts.iter().zip(self.banned.iter_mut()) {
+            if *vt == point_type {
+                *b = false;
+            }
+        }
+    }
+
+    /// Require the given point type and point.
+    fn require(&mut self, point_type: CellPointType, point: CellPoint) {
         let vts = self.cell_set.point_types(point);
         for (vt, b) in vts.iter().zip(self.banned.iter_mut()) {
             if *vt != point_type {
                 *b = true;
-            }
-            if add && *vt == point_type {
-                *b = false;
             }
         }
     }
