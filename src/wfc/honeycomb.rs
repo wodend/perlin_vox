@@ -1,10 +1,280 @@
 use std::vec;
 
 use glam::{IVec3, UVec3};
-use ndarray::Array3;
+use ndarray::{s, Array1, Array3, Array4, ArrayView1, Axis, SliceInfo, SliceInfoElem, Dim};
+use ndarray::Zip;
 
 use crate::noise::Perlin1;
-use crate::vector::{Pos3, Vector3};
+use crate::vector::{Size3, Dim3, Vector3, Vector4};
+
+pub struct Honeycomb2 {
+    size: UVec3,
+    point_types: Array3<PointType>,
+    points: Array3<PointType>,
+}
+
+impl Honeycomb2 {
+    const CHUNK_SIZE: UVec3 = Cell2::SIZE;
+
+    pub fn new(size: UVec3) -> Honeycomb2 {
+        let s = size * Self::CHUNK_SIZE;
+        Honeycomb2 {
+            size: size,
+            point_types: Array3::from_elem(size.into_size3(), PointType::Empty),
+            points: Array3::from_elem(s.into_size3(), PointType::Empty),
+        }
+    }
+
+    pub fn from(cellset: Cellset2) -> Honeycomb2 {
+        let size = UVec3::new(80, 80, 1);
+        let mut honeycomb = Honeycomb2::new(size);
+        for id in 0..cellset.len() {
+            if id < 1600 {
+                let cell = cellset.get(CellId(id));
+                let x = id as u32 / 40;
+                let y = id as u32 % 40;
+                let xyz = UVec3::new(x * 2, y * 2, 0);
+                honeycomb.insert(xyz, cell);
+            }
+        }
+        honeycomb
+    }
+
+    pub fn size(&self) -> UVec3 {
+        self.size
+    }
+
+    pub fn insert(&mut self, xyz: UVec3, cell: Cell2) {
+        self.point_types[xyz.into_size3()] = cell.point_type;
+        self.points.slice_mut(Self::slice(xyz)).assign(&cell.points);
+    }
+
+    pub fn get(&mut self, xyz: UVec3) -> Option<Cell2> {
+        if xyz.cmplt(self.size).all() {
+            Some(self.get_unchecked(xyz))
+        } else {
+            None
+        }
+    }
+
+    fn get_unchecked(&self, xyz: UVec3) -> Cell2 {
+        Cell2 {
+            point_type: self.point_types[xyz.into_size3()],
+            points: self.points.slice(Self::slice(xyz)).to_owned(),
+        }
+    }
+
+    fn slice(xyz: UVec3) -> SliceInfo<[SliceInfoElem; 3], Dim<[usize; 3]>, Dim<[usize; 3]>> {
+        let xyz_0 = xyz * Self::CHUNK_SIZE;
+        let xyz_1 = xyz_0 + Self::CHUNK_SIZE;
+        s![
+            xyz_0.x as usize..xyz_1.x as usize,
+            xyz_0.y as usize..xyz_1.y as usize,
+            xyz_0.z as usize..xyz_1.z as usize,
+        ]
+    }                       
+
+    pub fn debug_render(&self) -> Array3<[u8; 4]> {
+        let voxels = self.points.mapv(|t| t.rgba().0);
+        voxels
+    }
+}
+/// A set of Cell2s.
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct Cellset2 {
+    point_types: Vec<PointType>,
+    points: Array4<PointType>,
+}
+
+impl Cellset2 {
+    /// Create a new empty Cellset2.
+    pub fn new() -> Cellset2 {
+        Cellset2 {
+            point_types: Vec::new(),
+            points: Array4::from_elem(Cell2::SIZE.extend(0).into_size4(), PointType::Empty),
+        }
+    }
+
+    /// Push a Cell2 into the Cellset2.
+    pub fn push(&mut self, cell: Cell2) {
+        self.point_types.push(cell.point_type);
+        self.points.push(Axis(3), cell.points.view()).unwrap();
+    }
+
+    /// Append a Vec of Cell2s into the Cellset2.
+    pub fn append(&mut self, cells: Vec<Cell2>) {
+        for c in cells {
+            self.point_types.push(c.point_type);
+            self.points.push(Axis(3), c.points.view()).unwrap();
+        }
+    }
+
+    /// Get a Cell2 from the Cellset2 by CellId.
+    pub fn get(&self, cell_id: CellId) -> Cell2 {
+        Cell2 {
+            point_type: self.point_types[cell_id.0],
+            points: self.points.index_axis(Axis(3), cell_id.0).to_owned(),
+        }
+    }
+
+    /// Get the number of Cell2s in the set.
+    pub fn len(&self) -> usize {
+        self.points.len_of(Axis(3))
+    }
+
+    /// Get all cell PointTypes.
+    pub fn point_types(&self) -> &Vec<PointType> {
+        &self.point_types
+    }
+
+    /// Get all PointTypes for a given `xyz`.
+    pub fn points(&self, xyz: Size3) -> ArrayView1<PointType> {
+        self.points.slice(s![xyz.0, xyz.1, xyz.2, ..])
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub struct CellId(pub usize);
+
+/// A cubic honeycomb cell.
+/// 
+/// A cell is defined by 27 points in a 3x3x3 grid and a PointType.
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct Cell2 {
+    point_type: PointType,
+    points: Array3<PointType>,
+}
+
+impl Cell2 {
+    const SIZE: UVec3 = UVec3::new(3, 3, 3);
+    /// Create a new empty Cell2.
+    pub fn empty() -> Cell2 {
+        Cell2 {
+            point_type: PointType::Empty,
+            points: Array3::from_elem(Self::SIZE.into_size3(), PointType::Empty),
+        }
+    }
+
+    /// Create a new Cell2 with all elements set to `point_type`.
+    pub fn splat(point_type: PointType) -> Cell2 {
+        Cell2 {
+            point_type: point_type,
+            points: Array3::from_elem(Self::SIZE.into_size3(), point_type),
+        }
+    }
+
+    /// Get the PointType at `xyz`.
+    pub fn get(&self, xyz: Size3) -> PointType {
+        self.points[xyz]
+    }
+
+    /// Get a mutable reference to the PointType at `xyz`.
+    pub fn get_mut(&mut self, xyz: Size3) -> &mut PointType {
+        &mut self.points[xyz]
+    }
+
+    /// Get the PointType for treating the Cell2 as a single point.
+    pub fn get_point_type(&self) -> PointType {
+        self.point_type
+    }
+
+    /// Get the PointType for treating the Cell2 as a single point.
+    pub fn get_point_type_mut(&mut self) -> &mut PointType {
+        &mut self.point_type
+    }
+
+    /// Get the PointType for treating the Cell2 as a single point.
+    pub fn get_points(&self) -> &Array3<PointType> {
+        &self.points
+    }
+
+    /// Create a Vec of `cell` rotated `i` degrees `n` times.
+    /// 
+    /// The minimum rotation is 45 degrees, so `i=1` is 45 degrees, `i=2` is 90, etc.
+    pub fn rotated_z(&self, n: usize, i: usize) -> Vec<Cell2> {
+        let mut rotations = Vec::new();
+        for r in 0..n {
+            let mut rotated = self.clone();
+            for _ in 0..r * i {
+                rotated = Self::rotate_z_45(&rotated);
+            }
+            rotations.push(rotated);
+        }
+        rotations
+    }
+
+    /// Rotate a Cell2 45 degrees around the z-axis.
+    fn rotate_z_45(&self) -> Cell2 {
+        let mut rotated = self.clone();
+        for (xyz, p) in self.points.indexed_iter() {
+            let xyz_rot = Self::rotate_z_45_xyz(xyz);
+            *rotated.get_mut(xyz_rot) = *p;
+        }
+        rotated
+    }
+
+    /// Rotate an `xyz` 45 degrees around the z-axis.
+    fn rotate_z_45_xyz(xyz: Size3) -> Size3 {
+        let center = IVec3::new(1, 1, 1);
+        let v = xyz.into_ivec3();
+        let o = v - center;
+        // First quadrant.
+        if o.x >= 0 && o.y > 0 {
+            let r = IVec3::new(-1, 0, 0);
+            (v + r).as_uvec3().into_size3()
+        // Second quadrant.
+        } else if o.x < 0 && o.y >= 0 {
+            let r = IVec3::new(0, -1, 0);
+            (v + r).as_uvec3().into_size3()
+        // Third quadrant.
+        } else if o.x <= 0 && o.y < 0 {
+            let r = IVec3::new(1, 0, 0);
+            (v + r).as_uvec3().into_size3()
+        // Fourth quadrant.
+        } else {
+            let r = IVec3::new(0, 1, 0);
+            (v + r).as_uvec3().into_size3()
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub struct CellPoint2(pub Size3);
+
+impl CellPoint2 {
+    pub fn adjacent(&self) -> Vec<CellPoint2> {
+        // TODO: merge this with neighbor code somehow, both should be in the same file with honeycomb logic.
+        match self {
+            CellPoint2((1, 2, 2)) => vec![CellPoint2((1, 2, 2)), CellPoint2((2, 2, 2)), CellPoint2((0, 2, 2))],
+            CellPoint2((2, 1, 2)) => vec![CellPoint2((2, 1, 2)), CellPoint2((2, 2, 2)), CellPoint2((2, 0, 2))],
+            CellPoint2((2, 0, 2)) => vec![CellPoint2((2, 0, 2)), CellPoint2((1, 0, 2)), CellPoint2((0, 0, 2))],
+            CellPoint2((0, 1, 2)) => vec![CellPoint2((0, 1, 2)), CellPoint2((0, 0, 2)), CellPoint2((0, 2, 2))],
+            e => vec![*e],
+        }
+    }
+}
+
+/// A cubic cell point type.
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub enum PointType {
+    Empty,
+    Path,
+    Ground,
+    Building,
+    BuildingBig,
+}
+impl PointType {
+    fn rgba(&self) -> Rgba {
+        match *self {
+            PointType::Empty => Rgba([0; 4]),
+            PointType::Path => Rgba([51, 51, 51, 255]),
+            PointType::Ground => Rgba([120, 159, 138, 255]),
+            PointType::Building => Rgba([103, 127, 163, 255]),
+            PointType::BuildingBig => Rgba([109, 103, 163, 255]),
+            // PointType::Edge => Rgba([157, 163, 103, 255]),
+        }
+    }
+}
 
 /// A cubic honeycomb for Cells.
 pub struct Honeycomb {
@@ -13,15 +283,19 @@ pub struct Honeycomb {
 }
 impl Honeycomb {
     pub fn gen_perlin(seed: u32) -> Honeycomb {
-        // Initialize Honeycomb array.
-        let size = UVec3::new(32, 32, 4);
+        // Path noise settings voxel space scaling.
+        let size = UVec3::new(16, 16, 4);
         let center = size / 2;
-        let mut cells = Array3::from_elem(size.into_pos(), Cell::empty());
+        let path_scale = 2.0;
+        let sprawl_scale = 3.0;
+        let perlin_scale = 0.08;
+
+        // Initialize Honeycomb array.
+        let mut cells = Array3::from_elem(size.into_size3(), Cell::empty());
         let mut path = Vec::new();
         let mut sprawl_path = Vec::new();
 
         // Generate 1D Perlin noise path.
-        let perlin_scale = 0.08;
         let mut noise_path = Perlin1::gen(size.x as usize, seed, perlin_scale);
         noise_path.normalize();
 
@@ -29,9 +303,6 @@ impl Honeycomb {
         let mut noise_sprawl = Perlin1::gen(size.x as usize, seed + 1, perlin_scale);
         noise_sprawl.normalize();
 
-        // Define voxel space scaling.
-        let path_scale = 7.0;
-        let sprawl_scale = 5.0;
         let mut prev_y = None;
         for ((x, n_p), n_s) in noise_path.values.indexed_iter().zip(noise_sprawl.values) {
             // Scale path noise value.
@@ -78,13 +349,13 @@ impl Honeycomb {
 
     pub fn debug_render(&self) -> Array3<[u8; 4]> {
         let size = self.size() * Cell::DEBUG_VOXELS_SIZE as u32;
-        let mut voxels = Array3::from_elem(size.into_pos(), [0; 4]);
+        let mut voxels = Array3::from_elem(size.into_size3(), [0; 4]);
         for (xyz, cell) in self.cells.indexed_iter() {
             let cell_voxels = cell.debug_voxels();
             let cell_vector = xyz.into_uvec3() * Cell::DEBUG_VOXELS_SIZE as u32;
             for (xyz, rgba) in cell_voxels.indexed_iter() {
                 let vector = cell_vector + xyz.into_uvec3();
-                voxels[vector.into_pos()] = rgba.0;
+                voxels[vector.into_size3()] = rgba.0;
             }
         }
         voxels
@@ -111,6 +382,20 @@ pub struct Cell {
 impl Cell {
     const DEBUG_VOXELS_SIZE: usize = 3;
     const DIRECTION_SPEC_SIZE: usize = 8;
+
+    pub fn splat(cell_point: CellPointType) -> Cell {
+        Cell {
+            center: cell_point,
+            n: cell_point,
+            ne: cell_point,
+            e: cell_point,
+            se: cell_point,
+            s: cell_point,
+            sw: cell_point,
+            w: cell_point,
+            nw: cell_point,
+        }
+    }
 
     /// Create an Empty Cell.
     pub fn empty() -> Cell {
@@ -293,6 +578,21 @@ impl Cell {
         }
     }
 
+    /// Create a edge Cell.
+    fn edge() -> Cell {
+        Cell {
+            center: CellPointType::Edge,
+            n: CellPointType::Edge,
+            ne: CellPointType::Edge,
+            e: CellPointType::Edge,
+            se: CellPointType::Edge,
+            s: CellPointType::Edge,
+            sw: CellPointType::Edge,
+            w: CellPointType::Edge,
+            nw: CellPointType::Edge,
+        }
+    }
+
     /// Create a new Cell from a direction spec.
     fn from_direction_spec(center: CellPointType, array: [CellPointType; Self::DIRECTION_SPEC_SIZE]) -> Cell {
         Cell {
@@ -410,6 +710,7 @@ impl Cell {
         }
         cells.push(Self::ground());
         cells.push(Self::buildingbig());
+        cells.push(Self::edge());
         cells
     }
 
@@ -463,11 +764,11 @@ impl Cell {
     fn debug_voxels(&self) -> Array3<Rgba> {
         let size = UVec3::splat(Self::DEBUG_VOXELS_SIZE as u32);
         let base = self.center.rgba();
-        let mut voxels = Array3::from_elem(size.into_pos(), base);
+        let mut voxels = Array3::from_elem(size.into_size3(), base);
         let center = IVec3::new(1, 1, 2);
-        voxels[center.as_uvec3().into_pos()] = base;
+        voxels[center.as_uvec3().into_size3()] = base;
         for d in CellPoint::directions() {
-            let p = (center + d.voxel_offset()).as_uvec3().into_pos();
+            let p = (center + d.voxel_offset()).as_uvec3().into_size3();
             voxels[p] = self.get(d).rgba();
         }
         voxels
@@ -482,6 +783,7 @@ pub enum CellPointType {
     Ground,
     Building,
     BuildingBig,
+    Edge,
 }
 impl CellPointType {
     fn rgba(&self) -> Rgba {
@@ -491,6 +793,7 @@ impl CellPointType {
             CellPointType::Ground => Rgba([120, 159, 138, 255]),
             CellPointType::Building => Rgba([103, 127, 163, 255]),
             CellPointType::BuildingBig => Rgba([109, 103, 163, 255]),
+            CellPointType::Edge => Rgba([157, 163, 103, 255]),
         }
     }
 }
@@ -527,15 +830,18 @@ impl CellPoint {
         ]
     }
 
-    /// Get the adjacent directional points, including self.
-    pub fn adjacent(&self) -> Vec<CellPoint> {
-        match self {
-            CellPoint::N => vec![CellPoint::N, CellPoint::NE, CellPoint::NW],
-            CellPoint::E => vec![CellPoint::E, CellPoint::NE, CellPoint::SE],
-            CellPoint::S => vec![CellPoint::S, CellPoint::SE, CellPoint::SW],
-            CellPoint::W => vec![CellPoint::W, CellPoint::SW, CellPoint::NW],
-            e => vec![*e],
-        }
+    /// Get the neighbors of a CellPoint.
+    pub fn neighbors() -> Vec<(CellPoint, IVec3)> {
+        vec![
+            (CellPoint::N, IVec3::new(0, 1, 0)),
+            (CellPoint::NE, IVec3::new(1, 1, 0)),
+            (CellPoint::E, IVec3::new(1, 0, 0)),
+            (CellPoint::SE, IVec3::new(1, -1, 0)),
+            (CellPoint::S, IVec3::new(0, -1, 0)),
+            (CellPoint::SW, IVec3::new(-1, -1, 0)),
+            (CellPoint::W, IVec3::new(-1, 0, 0)),
+            (CellPoint::NW, IVec3::new(-1, 1, 0)),
+        ]
     }
 
     /// Get the voxel space offset.
@@ -553,7 +859,16 @@ impl CellPoint {
         }
     }
 
-
+    /// Get the adjacent directional points, including self.
+    pub fn adjacent(&self) -> Vec<CellPoint> {
+        match self {
+            CellPoint::N => vec![CellPoint::N, CellPoint::NE, CellPoint::NW],
+            CellPoint::E => vec![CellPoint::E, CellPoint::NE, CellPoint::SE],
+            CellPoint::S => vec![CellPoint::S, CellPoint::SE, CellPoint::SW],
+            CellPoint::W => vec![CellPoint::W, CellPoint::SW, CellPoint::NW],
+            e => vec![*e],
+        }
+    }
     
     pub fn opposite(&self) -> CellPoint {
         match self {

@@ -6,7 +6,7 @@ use std::path::Path;
 use glam::{IVec3, UVec3};
 use ndarray::Array3;
 
-use crate::vector::{Pos3, Vector3};
+use crate::vector::{Dim3, Vector3};
 
 pub struct Vox {
     size: IVec3,
@@ -46,14 +46,14 @@ impl Vox {
         // Calculate voxel position and color index data
         let varray_size = varray.dim();
         Self::check_size(varray_size)?;
-        let size = Pos3::into_ivec3(varray_size);
+        let size = varray_size.into_ivec3();
         let mut color_index = 1;
         let mut xyzis = Vec::new();
         let mut palette = HashMap::new();
         for (pos, rgba) in varray.indexed_iter() {
             // MagicaVoxel does not render transparency, here we exclude voxels with alpha=0
             if rgba[3] > 0 {
-                let vox = Pos3::into_uvec3(pos);
+                let vox = pos.into_uvec3();
                 Self::check_xyz(vox)?;
                 let mut xyzi = [0; 4];
                 xyzi[0] = vox.x as u8;
@@ -80,7 +80,7 @@ impl Vox {
     }
 
     pub fn into_varray(&self) -> Array3<[u8; 4]> {
-        let mut render = Array3::from_elem(self.size.as_uvec3().into_pos(), [0; 4]);
+        let mut render = Array3::from_elem(self.size.as_uvec3().into_size3(), [0; 4]);
         for [x, y, z, i] in &self.xyzis {
             render[[*x as usize, *y as usize, *z as usize]] = *self
                 .palette

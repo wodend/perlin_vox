@@ -1,7 +1,7 @@
 use glam::{Vec2, Vec2Swizzles, Vec3, Vec3Swizzles};
 use ndarray::{ArrayBase, Array1, Array2, Array3, Dimension, OwnedRepr};
 
-use crate::vector::{Pos2, Pos3};
+use crate::vector::{Dim2, Dim3};
 
 /// Normalize an ndarray of f32.
 pub fn normalize<D>(narray: &mut ArrayBase<OwnedRepr<f32>, D>)
@@ -99,7 +99,7 @@ impl Perlin2 {
         let mut derivatives = Array2::from_elem(size, Vec2::ZERO);
 
         for ((xy, v), d) in values.indexed_iter_mut().zip(derivatives.iter_mut()) {
-            let p = Pos2::into_vec2(xy) * scale;
+            let p = xy.into_vec2() * scale;
             let noise = Self::noise_d(seed, p);
             *v = noise.0;
             *d = noise.1;
@@ -176,7 +176,7 @@ impl Perlin3 {
         let mut derivatives = Array3::from_elem(size, Vec3::ZERO);
 
         for ((xyz, v), d) in values.indexed_iter_mut().zip(derivatives.iter_mut()) {
-            let p = Pos3::into_vec3(xyz) * scale;
+            let p = xyz.into_vec3() * scale;
             let noise = Self::noise_d(seed, p);
             *v = noise.0;
             *d = noise.1;

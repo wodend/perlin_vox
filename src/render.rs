@@ -8,7 +8,7 @@ use palette::{LinSrgba, Srgba};
 
 use crate::noise::{Perlin1, Perlin2, Perlin3};
 use crate::tile_map::{rotate, TileMap};
-use crate::vector::{Pos3, Vector3};
+use crate::vector::{Dim3, Vector3};
 
 /// Generate a full color spectrum heatmap gradient.
 fn heatmap_gradient(gradient_size: usize) -> Vec<LinSrgba> {
@@ -173,7 +173,7 @@ impl LineMap {
 
         let size = (64, 64, 64);
         let len = 16;
-        let size_v = Pos3::into_ivec3(size);
+        let size_v = size.into_ivec3();
         let center = size_v / 2;
         let base = Vec3::new(1.0, 0.0, 0.0);
         let y_axis = Vec3::new(0.0, 1.0, 0.0);
@@ -192,7 +192,7 @@ impl LineMap {
                     let p1 = center + (z_axis * len as f32).as_ivec3();
                     let line = line(p0, p1);
                     for pos in line.iter() {
-                        let p = pos.as_uvec3().into_pos();
+                        let p = pos.as_uvec3().into_size3();
                         let linsrgba = gradient[g_i];
                         values[p] = Srgba::from(linsrgba).into();
                     }
@@ -200,7 +200,7 @@ impl LineMap {
                 }
                 let line = line(p0, p1);
                 for pos in line.iter() {
-                    let p = pos.as_uvec3().into_pos();
+                    let p = pos.as_uvec3().into_size3();
                     let linsrgba = gradient[g_i];
                     values[p] = Srgba::from(linsrgba).into();
                 }
@@ -220,7 +220,7 @@ impl Render {
     /// Render a voxel TileMap.
     pub fn gen(tile_map: TileMap) -> Render {
         let size = tile_map.values.dim().into_uvec3() * tile_map.tileset.tile_size as u32;
-        let mut values = Array3::from_elem(size.into_pos(), [0; 4]);
+        let mut values = Array3::from_elem(size.into_size3(), [0; 4]);
 
         for ((xyz, tile_id), r) in tile_map
             .values
@@ -232,7 +232,7 @@ impl Render {
             let tile_vector = xyz.into_uvec3() * tile_map.tileset.tile_size as u32;
             for (xyz, rgba) in tile_r.indexed_iter() {
                 let vector = tile_vector + xyz.into_uvec3();
-                values[vector.into_pos()] = *rgba;
+                values[vector.into_size3()] = *rgba;
             }
         }
 
